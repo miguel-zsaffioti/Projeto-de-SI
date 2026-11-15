@@ -466,3 +466,4 @@ model IndicadorHistorico {
   @@index([periodoId, codigoIndicador], name: "ix_indicador_historico_periodo")
   @@map("indicador_historico")
 }
+

@@ -37,3 +37,4 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 app.listen(PORT, () => {
   console.log(`✅  Backend OTO rodando em http://localhost:${PORT}`)
 })
+
