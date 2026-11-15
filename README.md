@@ -10,8 +10,8 @@ Projeto desenvolvido na disciplina de **Projeto e Desenvolvimento de Sistemas de
 
 | Camada | Tecnologia |
 |---|---|
-| Frontend | React 18 + Vite |
-| Backend | Node.js + Express.js |
+| Frontend | React 18 + Vite + **TypeScript** |
+| Backend | Node.js + Express.js + **TypeScript** + **Prisma ORM** |
 | Banco de dados | PostgreSQL 16 |
 | Infra local | Docker + Docker Compose |
 
@@ -64,7 +64,17 @@ docker compose down -v
 cd backend
 cp .env.example .env     # ajuste DATABASE_URL se necessário
 npm install
-npm run dev              # inicia com nodemon, hot-reload
+npm run db:push          # aplica o schema Prisma no banco
+npm run dev              # inicia com tsx --watch, hot-reload
+```
+
+#### Comandos Prisma úteis
+
+```bash
+npm run db:push      # aplica prisma/schema.prisma no banco (dev)
+npm run db:migrate   # cria e aplica uma migration versionada
+npm run db:studio    # abre o Prisma Studio (UI do banco)
+npm run db:generate  # regenera o Prisma Client
 ```
 
 ### Frontend
@@ -84,21 +94,28 @@ npm run dev              # http://localhost:5173
 
 ```
 Projeto-de-SI/
-├── backend/              # API Express.js
+├── backend/                    # API Express.js + TypeScript + Prisma
+│   ├── prisma/
+│   │   └── schema.prisma       # fonte de verdade do banco (todos os modelos OTO)
 │   ├── src/
-│   │   ├── index.js      # entry point, middlewares, rotas
-│   │   └── db.js         # pool de conexão com PostgreSQL
+│   │   ├── index.ts            # entry point, middlewares, rotas
+│   │   └── lib/
+│   │       └── prisma.ts       # singleton do PrismaClient
+│   ├── tsconfig.json
 │   ├── Dockerfile
 │   └── package.json
-├── frontend/             # App React (Vite)
+├── frontend/                   # App React + TypeScript (Vite)
 │   ├── src/
-│   │   ├── main.jsx
-│   │   └── App.jsx
+│   │   ├── main.tsx
+│   │   ├── App.tsx
+│   │   └── vite-env.d.ts
 │   ├── index.html
-│   ├── vite.config.js
+│   ├── tsconfig.json
+│   ├── tsconfig.node.json
+│   ├── vite.config.ts
 │   └── Dockerfile
 ├── database/
-│   └── schema.sql        # schema PostgreSQL completo (OTO)
+│   └── schema.sql              # schema SQL de referência (Prisma é o ativo)
 ├── docker-compose.yml
 └── README.md
 ```
@@ -112,7 +129,7 @@ Projeto-de-SI/
 | Variável | Padrão | Descrição |
 |---|---|---|
 | `PORT` | `3001` | Porta da API |
-| `DATABASE_URL` | `postgres://oto_user:oto_pass@localhost:5432/oto` | String de conexão |
+| `DATABASE_URL` | `postgresql://oto_user:oto_pass@localhost:5432/oto` | String de conexão (Prisma) |
 
 ### Frontend
 

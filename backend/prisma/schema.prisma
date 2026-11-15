@@ -1,0 +1,468 @@
+// Olympia Tourist System (OTO) — Módulo de Pesquisas
+// Fonte de verdade do banco: este arquivo substitui database/schema.sql como definição ativa.
+// Banco: PostgreSQL 16
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum TipoPesquisa {
+  CONSOLIDADA
+  EXPECTATIVA
+
+  @@map("tipo_pesquisa")
+}
+
+enum StatusPesquisa {
+  ABERTA
+  ENCERRADA
+  CANCELADA
+
+  @@map("status_pesquisa")
+}
+
+enum TipoDadoPeriodo {
+  REALIZADO
+  ESPERADO
+
+  @@map("tipo_dado_periodo")
+}
+
+enum TipoHospedagem {
+  HOTEL
+  RESORT
+  POUSADA
+  FLAT
+  HOSTEL
+  OUTRO
+
+  @@map("tipo_hospedagem")
+}
+
+enum CanalContato {
+  EMAIL
+  WHATSAPP
+  OUTRO
+
+  @@map("canal_contato")
+}
+
+enum StatusConvite {
+  PENDENTE
+  ENVIADO
+  RESPONDIDO
+
+  @@map("status_convite")
+}
+
+enum CanalEnvio {
+  EMAIL
+  WHATSAPP
+
+  @@map("canal_envio")
+}
+
+enum StatusEnvio {
+  PREPARADO
+  ENVIADO
+  FALHOU
+
+  @@map("status_envio")
+}
+
+enum PreferenciaBoletim {
+  NAO_QUERO
+  WHATSAPP
+  EMAIL
+  OUTRO
+
+  @@map("preferencia_boletim")
+}
+
+enum TipoAutorAlteracao {
+  ESTABELECIMENTO
+  ADMINISTRADOR
+
+  @@map("tipo_autor_alteracao")
+}
+
+enum MetodoDiaria {
+  ARITMETICA
+  PONDERADA
+
+  @@map("metodo_diaria")
+}
+
+enum CategoriaDiaria {
+  HOTEL
+  RESORT
+  POUSADA
+  GERAL
+
+  @@map("categoria_diaria")
+}
+
+enum StatusCalculo {
+  EM_EXECUCAO
+  CONCLUIDO
+  FALHOU
+
+  @@map("status_calculo")
+}
+
+enum StatusImportacao {
+  PREVIA
+  IMPORTADA
+  FALHOU
+
+  @@map("status_importacao")
+}
+
+// =============================================================================
+// 1. Administradores
+// =============================================================================
+
+model Administrador {
+  id        BigInt   @id @default(autoincrement())
+  nome      String   @db.VarChar(150)
+  email     String   @unique @db.VarChar(254)
+  senhaHash String   @map("senha_hash")
+  ativo     Boolean  @default(true)
+  criadoEm DateTime @default(now()) @map("criado_em") @db.Timestamptz()
+
+  pesquisas             Pesquisa[]
+  execucoesCalculo      ExecucaoCalculo[]
+  importacoes           ImportacaoHistorica[]
+  conjuntosParametros   ConjuntoParametrosCalculo[]
+  tentativasEnvio       TentativaEnvio[]
+  historicoRespostas    HistoricoResposta[]
+
+  @@map("administrador")
+}
+
+// =============================================================================
+// 2. Inventário de meios de hospedagem
+// =============================================================================
+
+model Estabelecimento {
+  id              BigInt         @id @default(autoincrement())
+  codigoInterno   String         @unique @map("codigo_interno") @db.VarChar(80)
+  nomeFantasia    String         @map("nome_fantasia") @db.VarChar(200)
+  tipoHospedagem  TipoHospedagem @map("tipo_hospedagem")
+  totalUh         Int            @map("total_uh")
+  leitosMinPorUh  Decimal?       @map("leitos_min_por_uh") @db.Decimal(7, 2)
+  leitosMaxPorUh  Decimal?       @map("leitos_max_por_uh") @db.Decimal(7, 2)
+  ativo           Boolean        @default(true)
+  atualizadoEm   DateTime       @default(now()) @map("atualizado_em") @db.Timestamptz()
+
+  contatos ContatoEstabelecimento[]
+  convites ConvitePesquisa[]
+
+  @@map("estabelecimento")
+}
+
+model ContatoEstabelecimento {
+  id               BigInt       @id @default(autoincrement())
+  estabelecimentoId BigInt      @map("estabelecimento_id")
+  canal            CanalContato
+  valor            String       @db.VarChar(254)
+  principal        Boolean      @default(false)
+  criadoEm        DateTime     @default(now()) @map("criado_em") @db.Timestamptz()
+
+  estabelecimento Estabelecimento @relation(fields: [estabelecimentoId], references: [id], onDelete: Cascade)
+
+  @@unique([estabelecimentoId, canal, valor], name: "uq_contato_estabelecimento")
+  @@map("contato_estabelecimento")
+}
+
+// RHC é capacidade agregada usada nos cálculos (RN15).
+model InventarioRhc {
+  id             BigInt   @id @default(autoincrement())
+  totalUh        Int      @map("total_uh")
+  leitosMinPorUh Decimal  @map("leitos_min_por_uh") @db.Decimal(7, 2)
+  leitosMaxPorUh Decimal  @map("leitos_max_por_uh") @db.Decimal(7, 2)
+  atualizadoEm  DateTime @default(now()) @map("atualizado_em") @db.Timestamptz()
+
+  @@map("inventario_rhc")
+}
+
+// =============================================================================
+// 3. Pesquisas e períodos
+// =============================================================================
+
+model Pesquisa {
+  id            BigInt         @id @default(autoincrement())
+  tipo          TipoPesquisa
+  status        StatusPesquisa @default(ABERTA)
+  criadaPor     BigInt         @map("criada_por")
+  abertaEm     DateTime       @default(now()) @map("aberta_em") @db.Timestamptz()
+  prazoResposta DateTime       @map("prazo_resposta") @db.Timestamptz()
+  encerradaEm  DateTime?      @map("encerrada_em") @db.Timestamptz()
+  criadaEm     DateTime       @default(now()) @map("criada_em") @db.Timestamptz()
+
+  administrador Administrador     @relation(fields: [criadaPor], references: [id])
+  periodos      PesquisaPeriodo[]
+  convites      ConvitePesquisa[]
+
+  @@index([status, prazoResposta], name: "ix_pesquisa_status_prazo")
+  @@map("pesquisa")
+}
+
+model PeriodoReferencia {
+  id         BigInt          @id @default(autoincrement())
+  nome       String          @db.VarChar(160)
+  dataInicio DateTime        @map("data_inicio") @db.Date
+  dataFim    DateTime        @map("data_fim") @db.Date
+  tipoDado   TipoDadoPeriodo @map("tipo_dado")
+
+  pesquisas            PesquisaPeriodo[]
+  indicadoresHistoricos IndicadorHistorico[]
+
+  @@unique([nome, dataInicio, dataFim, tipoDado], name: "uq_periodo_referencia")
+  @@map("periodo_referencia")
+}
+
+// Tabela de junção: pesquisa ↔ período.
+model PesquisaPeriodo {
+  pesquisaId    BigInt @map("pesquisa_id")
+  periodoId     BigInt @map("periodo_id")
+  ordemExibicao Int    @map("ordem_exibicao")
+
+  pesquisa          Pesquisa          @relation(fields: [pesquisaId], references: [id], onDelete: Cascade)
+  periodo           PeriodoReferencia @relation(fields: [periodoId], references: [id])
+  respostasOcupacao RespostaOcupacao[]
+  execucoesCalculo  ExecucaoCalculo[]
+
+  @@id([pesquisaId, periodoId])
+  @@unique([pesquisaId, ordemExibicao], name: "uq_pesquisa_ordem_periodo")
+  @@map("pesquisa_periodo")
+}
+
+// =============================================================================
+// 4. Convites e tentativas de envio
+// =============================================================================
+
+// tokenHash armazena somente o SHA-256 do token real (RN, app layer gera o token).
+model ConvitePesquisa {
+  id               BigInt        @id @default(autoincrement())
+  pesquisaId       BigInt        @map("pesquisa_id")
+  estabelecimentoId BigInt       @map("estabelecimento_id")
+  tokenHash        String        @unique @map("token_hash") @db.Char(64)
+  status           StatusConvite @default(PENDENTE)
+  criadoEm        DateTime      @default(now()) @map("criado_em") @db.Timestamptz()
+  ultimoEnvioEm   DateTime?     @map("ultimo_envio_em") @db.Timestamptz()
+
+  pesquisa        Pesquisa        @relation(fields: [pesquisaId], references: [id], onDelete: Cascade)
+  estabelecimento Estabelecimento @relation(fields: [estabelecimentoId], references: [id])
+  tentativas      TentativaEnvio[]
+  resposta        RespostaPesquisa?
+
+  @@unique([pesquisaId, estabelecimentoId], name: "uq_convite_pesquisa_estabelecimento")
+  @@index([pesquisaId, status], name: "ix_convite_pesquisa_status")
+  @@map("convite_pesquisa")
+}
+
+// WhatsApp sempre fica em PREPARADO — envio automático só por e-mail (RN04).
+model TentativaEnvio {
+  id                   BigInt      @id @default(autoincrement())
+  conviteId            BigInt      @map("convite_id")
+  canal                CanalEnvio
+  status               StatusEnvio
+  iniciadoPor          BigInt?     @map("iniciado_por")
+  tentadoEm           DateTime    @default(now()) @map("tentado_em") @db.Timestamptz()
+  mensagemErro         String?     @map("mensagem_erro")
+  identificadorProvedor String?    @map("identificador_provedor") @db.VarChar(200)
+
+  convite       ConvitePesquisa @relation(fields: [conviteId], references: [id], onDelete: Cascade)
+  administrador Administrador?  @relation(fields: [iniciadoPor], references: [id])
+
+  @@index([conviteId, tentadoEm(sort: Desc)], name: "ix_tentativa_envio_convite")
+  @@map("tentativa_envio")
+}
+
+// =============================================================================
+// 5. Respostas e taxas de ocupação por período
+// =============================================================================
+
+// Uma resposta por estabelecimento por pesquisa (RN05 / RNF05).
+model RespostaPesquisa {
+  id                 BigInt             @id @default(autoincrement())
+  pesquisaId         BigInt             @map("pesquisa_id")
+  estabelecimentoId  BigInt             @map("estabelecimento_id")
+  conviteId          BigInt             @unique @map("convite_id")
+  enviadaEm         DateTime           @default(now()) @map("enviada_em") @db.Timestamptz()
+  atualizadaEm      DateTime           @default(now()) @map("atualizada_em") @db.Timestamptz()
+  preferenciaBoletim PreferenciaBoletim @map("preferencia_boletim")
+  emailConfirmacao   String?            @map("email_confirmacao") @db.VarChar(254)
+
+  convite   ConvitePesquisa    @relation(fields: [conviteId], references: [id])
+  ocupacoes RespostaOcupacao[]
+  historico HistoricoResposta[]
+
+  @@unique([pesquisaId, estabelecimentoId], name: "uq_resposta_pesquisa_estabelecimento")
+  @@index([pesquisaId, enviadaEm], name: "ix_resposta_pesquisa_enviada")
+  @@map("resposta_pesquisa")
+}
+
+// taxa_ocupacao pode ser NULL após correção administrativa que apague o campo (UC08).
+// Na submissão inicial a aplicação deve exigir 0–100 para cada período (UC04).
+model RespostaOcupacao {
+  respostaId   BigInt   @map("resposta_id")
+  pesquisaId   BigInt   @map("pesquisa_id")
+  periodoId    BigInt   @map("periodo_id")
+  taxaOcupacao Decimal? @map("taxa_ocupacao") @db.Decimal(5, 2)
+
+  resposta        RespostaPesquisa @relation(fields: [respostaId], references: [id], onDelete: Cascade)
+  // (pesquisaId, periodoId) garante que o período pertence à pesquisa (valida na app se o Prisma não puder impor).
+  pesquisaPeriodo PesquisaPeriodo  @relation(fields: [pesquisaId, periodoId], references: [pesquisaId, periodoId], onDelete: Cascade)
+  historico       HistoricoResposta[]
+
+  @@id([respostaId, periodoId])
+  @@map("resposta_ocupacao")
+}
+
+// =============================================================================
+// 6. Histórico de retificações (RF04 / RN09)
+// =============================================================================
+
+// Registra campo a campo: quem alterou, quando, valor anterior e novo.
+// periodoId é preenchido quando a alteração é em taxa_ocupacao; nulo para campos da resposta.
+// A constraint de FK para resposta_ocupacao é validada pela aplicação (Prisma não suporta FK composta nullable).
+model HistoricoResposta {
+  id              BigInt             @id @default(autoincrement())
+  respostaId      BigInt             @map("resposta_id")
+  periodoId       BigInt?            @map("periodo_id")
+  campoAlterado   String             @map("campo_alterado") @db.VarChar(100)
+  valorAnterior   String?            @map("valor_anterior")
+  valorNovo       String?            @map("valor_novo")
+  tipoAutor       TipoAutorAlteracao @map("tipo_autor")
+  administradorId BigInt?            @map("administrador_id")
+  alteradoEm     DateTime           @default(now()) @map("alterado_em") @db.Timestamptz()
+
+  resposta         RespostaPesquisa  @relation(fields: [respostaId], references: [id], onDelete: Cascade)
+  administrador    Administrador?    @relation(fields: [administradorId], references: [id])
+  respostaOcupacao RespostaOcupacao? @relation(fields: [respostaId, periodoId], references: [respostaId, periodoId])
+
+  @@index([respostaId, alteradoEm(sort: Desc)], name: "ix_historico_resposta_data")
+  @@map("historico_resposta")
+}
+
+// =============================================================================
+// 7. Parâmetros de cálculo (UC10 / RN20)
+// =============================================================================
+
+// Somente um conjunto ativo por vez.
+// A unicidade parcial WHERE ativo = TRUE deve ser garantida via migration raw SQL
+// (índice parcial — não suportado diretamente pelo Prisma schema).
+model ConjuntoParametrosCalculo {
+  id               BigInt   @id @default(autoincrement())
+  percentualDayUse Decimal  @map("percentual_day_use") @db.Decimal(5, 2)
+  ativo            Boolean  @default(false)
+  criadoPor        BigInt   @map("criado_por")
+  criadoEm        DateTime @default(now()) @map("criado_em") @db.Timestamptz()
+  observacao       String?
+
+  administrador    Administrador          @relation(fields: [criadoPor], references: [id])
+  parametrosDiaria ParametroDiariaMedia[]
+  execucoes        ExecucaoCalculo[]
+
+  @@map("conjunto_parametros_calculo")
+}
+
+model ParametroDiariaMedia {
+  conjuntoParametrosId BigInt          @map("conjunto_parametros_id")
+  categoria            CategoriaDiaria
+  metodo               MetodoDiaria
+  valorDiariaMedia     Decimal         @map("valor_diaria_media") @db.Decimal(12, 2)
+
+  conjunto ConjuntoParametrosCalculo @relation(fields: [conjuntoParametrosId], references: [id], onDelete: Cascade)
+
+  @@id([conjuntoParametrosId, categoria, metodo])
+  @@map("parametro_diaria_media")
+}
+
+// =============================================================================
+// 8. Execuções de cálculo e indicadores calculados (UC09)
+// =============================================================================
+
+// Cada execução cria uma nova linha — a anterior é preservada para auditoria (nota 9 do schema SQL).
+model ExecucaoCalculo {
+  id                   BigInt        @id @default(autoincrement())
+  pesquisaId           BigInt        @map("pesquisa_id")
+  periodoId            BigInt        @map("periodo_id")
+  conjuntoParametrosId BigInt        @map("conjunto_parametros_id")
+  executadoPor         BigInt        @map("executado_por")
+  status               StatusCalculo @default(EM_EXECUCAO)
+  calculadoEm         DateTime      @default(now()) @map("calculado_em") @db.Timestamptz()
+  mensagemErro         String?       @map("mensagem_erro")
+
+  pesquisaPeriodo    PesquisaPeriodo           @relation(fields: [pesquisaId, periodoId], references: [pesquisaId, periodoId])
+  conjuntoParametros ConjuntoParametrosCalculo @relation(fields: [conjuntoParametrosId], references: [id])
+  administrador      Administrador             @relation(fields: [executadoPor], references: [id])
+  indicadores        IndicadorCalculado[]
+
+  @@index([pesquisaId, periodoId, calculadoEm(sort: Desc)], name: "ix_execucao_calculo_periodo")
+  @@map("execucao_calculo")
+}
+
+// codigoIndicador: ex. TURISTAS_TOTAL, REVPAR, COBERTURA_LEITOS.
+// chaveDimensao: HOTEL, RESORT, POUSADA ou TOTAL.
+model IndicadorCalculado {
+  id               BigInt  @id @default(autoincrement())
+  execucaoCalculoId BigInt @map("execucao_calculo_id")
+  codigoIndicador  String  @map("codigo_indicador") @db.VarChar(100)
+  chaveDimensao    String  @default("TOTAL") @map("chave_dimensao") @db.VarChar(100)
+  valor            Decimal @db.Decimal(20, 6)
+  unidade          String  @db.VarChar(40)
+
+  execucao ExecucaoCalculo @relation(fields: [execucaoCalculoId], references: [id], onDelete: Cascade)
+
+  @@unique([execucaoCalculoId, codigoIndicador, chaveDimensao], name: "uq_indicador_calculado")
+  @@map("indicador_calculado")
+}
+
+// =============================================================================
+// 9. Importação de indicadores históricos (UC11 / RN21)
+// =============================================================================
+
+model ImportacaoHistorica {
+  id                BigInt           @id @default(autoincrement())
+  administradorId   BigInt           @map("administrador_id")
+  nomeArquivo       String           @map("nome_arquivo") @db.VarChar(255)
+  hashArquivoSha256 String?          @map("hash_arquivo_sha256") @db.Char(64)
+  status            StatusImportacao @default(PREVIA)
+  enviadaEm        DateTime         @default(now()) @map("enviada_em") @db.Timestamptz()
+  importadaEm      DateTime?        @map("importada_em") @db.Timestamptz()
+  detalhes          Json?
+
+  administrador Administrador        @relation(fields: [administradorId], references: [id])
+  indicadores   IndicadorHistorico[]
+
+  @@map("importacao_historica")
+}
+
+model IndicadorHistorico {
+  id              BigInt  @id @default(autoincrement())
+  importacaoId    BigInt  @map("importacao_id")
+  periodoId       BigInt  @map("periodo_id")
+  codigoIndicador String  @map("codigo_indicador") @db.VarChar(100)
+  chaveDimensao   String  @default("TOTAL") @map("chave_dimensao") @db.VarChar(100)
+  valor           Decimal @db.Decimal(20, 6)
+  unidade         String  @db.VarChar(40)
+
+  importacao ImportacaoHistorica @relation(fields: [importacaoId], references: [id], onDelete: Cascade)
+  periodo    PeriodoReferencia   @relation(fields: [periodoId], references: [id])
+
+  @@unique([importacaoId, periodoId, codigoIndicador, chaveDimensao], name: "uq_indicador_historico")
+  @@index([periodoId, codigoIndicador], name: "ix_indicador_historico_periodo")
+  @@map("indicador_historico")
+}

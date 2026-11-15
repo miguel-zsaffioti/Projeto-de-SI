@@ -358,3 +358,4 @@ JOIN periodo_referencia pr ON pr.id = ih.periodo_id
 WHERE imp.status = 'IMPORTADA';
 
 COMMIT;
+
