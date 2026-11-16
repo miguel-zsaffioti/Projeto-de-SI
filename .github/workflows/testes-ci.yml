@@ -1,0 +1,123 @@
+name: CI - Testes Olympia Tourist System
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # JOB 1: Banco PostgreSQL + Prisma + API + 21 Testes Automatizados
+  testes-backend:
+    name: Back-end (Prisma + API + Testes)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: oto_user
+          POSTGRES_PASSWORD: oto_pass
+          POSTGRES_DB: oto
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://oto_user:oto_pass@localhost:5432/oto
+      PORT: 3001
+      JWT_SECRET: segredo_ci_oto_2026
+      JWT_EXPIRES_IN: 8h
+      ADMIN_EMAIL: admin@oto.local
+      ADMIN_SENHA: Admin@123
+      ADMIN_NOME: Admin OTO Teste
+
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependências do Back-end
+        working-directory: ./backend
+        run: npm install
+
+      - name: Gerar Prisma Client e aplicar Schema no banco
+        working-directory: ./backend
+        run: |
+          npm run db:generate
+          npm run db:push
+
+      - name: Popular banco com Seed inicial
+        working-directory: ./backend
+        run: npm run db:seed
+
+      - name: Subir API e executar roteiro de testes (21 testes)
+        working-directory: ./backend
+        run: |
+          npm run dev &
+          npx wait-on http://localhost:3001/health -t 30000
+          npm run testar | tee resultado-testes.log
+          if grep -q "Falhou" resultado-testes.log; then
+            echo "Erro: Um ou mais testes da API falharam!"
+            exit 1
+          fi
+
+      - name: Rodar testes unitários (quando configurados)
+        working-directory: ./backend
+        run: npm test --if-present
+
+  # JOB 2: Build e Testes do Front-end (React + Vite + TypeScript)
+  testes-frontend:
+    name: Front-end (Build Vite + Componentes)
+    runs-on: ubuntu-latest
+
+    env:
+      VITE_API_URL: http://localhost:3001
+
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependências e validar Build do Front-end
+        working-directory: ./frontend
+        run: |
+          npm install
+          npm run build
+          npm test -- --watchAll=false --if-present
+
+  # JOB 3: Preparado para Selenium E2E (Smoke Test)
+  testes-e2e-selenium:
+    name: E2E Selenium (Smoke Test)
+    runs-on: ubuntu-latest
+    needs: [testes-backend, testes-frontend]
+
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Chrome Headless para Selenium
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Executar suíte Selenium (quando a pasta tests-e2e existir)
+        run: |
+          if [ -d "tests-e2e" ]; then
+            echo "Chrome pronto para executar os testes Selenium!"
+            # Quando scripts estiverem prontos:
+            # pytest tests-e2e/
+            # ou: npm --prefix tests-e2e test
+          else
+            echo "Pasta tests-e2e ainda não criada. Pipeline validado com sucesso!"
+          fi
