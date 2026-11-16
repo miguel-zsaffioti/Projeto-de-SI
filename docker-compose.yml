@@ -26,6 +26,8 @@ services:
       PORT: 3001
       # Prisma exige o prefixo "postgresql://"
       DATABASE_URL: postgresql://oto_user:oto_pass@db:5432/oto
+      JWT_SECRET: segredo-local-apenas-para-desenvolvimento
+      JWT_EXPIRES_IN: 8h
     ports:
       - "3001:3001"
     volumes:
