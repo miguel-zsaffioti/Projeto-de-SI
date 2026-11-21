@@ -4,6 +4,8 @@ import { prisma } from './lib/prisma'
 import { tratarErros } from './middlewares/tratarErros'
 import { authRouter } from './modules/auth/auth.routes'
 import { formularioRouter } from './modules/formulario/formulario.routes'
+import { indicadoresRouter } from './modules/indicadores/indicadores.routes'
+import { respostasRouter } from './modules/respostas/respostas.routes'
 
 export const app = express()
 
@@ -21,6 +23,8 @@ app.get('/health', async (_req: Request, res: Response) => {
 
 app.use('/api/auth', authRouter)
 app.use('/api/formulario', formularioRouter)
+app.use('/api/pesquisas/:pesquisaId/indicadores', indicadoresRouter)
+app.use('/api/respostas', respostasRouter)
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ erro: 'Rota não encontrada', codigo: 'ROTA_NAO_ENCONTRADA' })

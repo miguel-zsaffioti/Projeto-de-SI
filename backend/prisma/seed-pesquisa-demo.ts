@@ -61,7 +61,7 @@ export async function criarPesquisaDemo() {
       },
     })
 
-    convites.push({ nomeFantasia: estabelecimento.nomeFantasia, token })
+    convites.push({ codigoInterno: estabelecimento.codigoInterno, nomeFantasia: estabelecimento.nomeFantasia, token })
   }
 
   return { pesquisaId: pesquisa.id, convites }
