@@ -170,6 +170,39 @@ Body do PATCH (um dos formatos):
 
 A resposta traz `alterado` (`false` se o valor já era esse) e `indicadoresRecalculados`: se a pesquisa já tinha indicadores calculados, corrigir uma taxa recalcula na hora. A retificação pelo próprio estabelecimento continua pelo formulário (`POST /api/formulario/:token/resposta`) enquanto a pesquisa estiver aberta.
 
+### Painel de respondentes e reenvio de link (UC06 / UC07)
+
+Exige login. O painel lista respondentes e pendentes de uma pesquisa, com contatos e
+data da resposta. O reenvio mantém o mesmo link único do convite.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/pesquisas/:pesquisaId/respondentes` | Resumo e lista de respondentes/pendentes |
+| POST | `/api/pesquisas/:pesquisaId/respondentes/reenviar` | Reenvia por e-mail ou prepara mensagem para WhatsApp |
+
+Body do reenvio:
+
+```json
+{
+  "conviteIds": ["1", "2"],
+  "canal": "EMAIL",
+  "tokens": {
+    "1": "token-original-do-convite",
+    "2": "outro-token-original"
+  }
+}
+```
+
+No canal `WHATSAPP`, a resposta inclui a mensagem pronta e uma URL `wa.me` com o texto
+preenchido para o administrador enviar. O token original não é persistido pelo sistema.
+Por isso, o reenvio recebe os tokens
+originais gerados na criação da pesquisa e valida cada um contra o hash armazenado
+antes de enviar.
+
+Para e-mail, configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`,
+`SMTP_PASS` e `SMTP_FROM`. Sem SMTP configurado, a API retorna
+`503 SMTP_NAO_CONFIGURADO` em vez de registrar um falso envio.
+
 ### Indicadores (UC09)
 
 Exige login. Cada cálculo cria uma nova execução por período; as anteriores ficam guardadas.
@@ -204,6 +237,18 @@ Diárias do período = dias de início a fim, contando os dois (outubro = 31, 31
 | 422 | `PARAMETROS_AUSENTES` / `RHC_AUSENTE` / `INVENTARIO_INCOMPLETO` | Falta dado de base para o cálculo |
 
 O cálculo fica em `backend/src/modules/indicadores/calculo.ts` (sem banco), conferido por `npm test` contra a planilha de conferência em `backend/tests/planilha-oto.ts`.
+
+### Exportação CSV (UC12)
+
+Exige login e exporta somente indicadores agregados, sem respostas individuais.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/pesquisas/:pesquisaId/indicadores/exportar.csv` | Exporta todos os períodos com indicadores |
+| GET | `/api/pesquisas/:pesquisaId/indicadores/exportar.csv?periodoIds=1,2` | Exporta períodos selecionados |
+
+O arquivo pode reunir indicadores calculados e importados, identificados pela coluna
+`origem`. Sem indicadores para o filtro, a API retorna `422 SEM_INDICADORES`.
 
 ### Frontend
 
