@@ -1,36 +1,42 @@
-import { useState, useEffect } from 'react'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import type { ReactNode } from 'react'
+import Painel from './components/Painel'
+import Auditoria from './pages/Auditoria'
+import Login from './pages/Login'
+import Respostas from './pages/Respostas'
+import { lerSessao } from './lib/sessao'
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
-
-interface HealthResponse {
-  status: string
-  db: string
-  timestamp?: string
-  error?: string
+function RotaPrivada({ children }: { children: ReactNode }) {
+  if (!lerSessao()) return <Navigate to="/login" replace />
+  return children
 }
 
 export default function App() {
-  const [health, setHealth] = useState<HealthResponse | null>(null)
-
-  useEffect(() => {
-    fetch(`${API_URL}/health`)
-      .then((r) => r.json() as Promise<HealthResponse>)
-      .then(setHealth)
-      .catch(() => setHealth({ status: 'error', db: 'unreachable' }))
-  }, [])
-
   return (
-    <main style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
-      <h1>OTO — Olympia Tourist System</h1>
-      <h2>Módulo de Pesquisas</h2>
-      {health ? (
-        <p>
-          API: <strong>{health.status}</strong> | DB: <strong>{health.db}</strong>
-        </p>
-      ) : (
-        <p>Conectando à API…</p>
-      )}
-    </main>
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route
+        path="/auditoria"
+        element={
+          <RotaPrivada>
+            <Painel>
+              <Auditoria />
+            </Painel>
+          </RotaPrivada>
+        }
+      />
+      <Route
+        path="/respostas"
+        element={
+          <RotaPrivada>
+            <Painel>
+              <Respostas />
+            </Painel>
+          </RotaPrivada>
+        }
+      />
+      <Route path="/" element={<Navigate to="/auditoria" replace />} />
+      <Route path="*" element={<Navigate to="/auditoria" replace />} />
+    </Routes>
   )
 }
-

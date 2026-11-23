@@ -1,3 +1,21 @@
 *, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; background: #f5f5f5; color: #222; }
 
+html, body, #root { min-height: 100%; }
+
+body {
+  margin: 0;
+  background: #f8f9ff;
+  color: #152232;
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+}
+
+button, input { font: inherit; }
+
+.marca {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  background: #233d89;
+  border-radius: 8px;
+}

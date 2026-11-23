@@ -1,0 +1,154 @@
+.painel {
+  min-height: 100vh;
+  background: #eef4ff;
+}
+
+.painel-barra {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  min-height: 76px;
+  padding: 10px 22px;
+  background: #fff;
+  border-bottom: 1px solid #e4e9f2;
+}
+
+.painel-marca {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.painel-marca strong {
+  color: #233d89;
+  font-size: 0.84rem;
+  line-height: 1.15;
+}
+
+.painel-perfil {
+  margin-left: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #eef1f6;
+  color: #667588;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.painel-nav {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.painel-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #3d4c5c;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  text-decoration: none;
+}
+
+button.painel-item {
+  cursor: default;
+}
+
+.painel-item.ativo {
+  background: #233d89;
+  color: #fff;
+}
+
+.painel-usuario {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.painel-usuario-texto {
+  text-align: right;
+  line-height: 1.2;
+}
+
+.painel-usuario-texto strong {
+  display: block;
+  font-size: 0.88rem;
+}
+
+.painel-usuario-texto span {
+  color: #6d7785;
+  font-size: 0.75rem;
+}
+
+.painel-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #d5dbe6;
+  border-radius: 50%;
+  background: #f7f9fc;
+  color: #233d89;
+  cursor: pointer;
+}
+
+.painel-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 5;
+  min-width: 140px;
+  padding: 6px;
+  border: 1px solid #e4e9f2;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(21, 34, 50, 0.08);
+}
+
+.painel-menu button {
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #152232;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.painel-menu button:hover {
+  background: #f3f6fb;
+}
+
+.painel-conteudo {
+  padding: 22px 22px 40px;
+}
+
+@media (max-width: 1100px) {
+  .painel-barra {
+    grid-template-columns: 1fr auto;
+  }
+
+  .painel-nav {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+}

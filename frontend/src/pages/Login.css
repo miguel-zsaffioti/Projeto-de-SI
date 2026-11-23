@@ -1,0 +1,158 @@
+.login-pagina {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 88px 16px 48px;
+}
+
+.login-cartao {
+  width: 100%;
+  max-width: 400px;
+  background: #fff;
+  border: 1px solid #e7e7ef;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(21, 34, 50, 0.04);
+  padding: 42px 28px 36px;
+}
+
+.login-cabecalho {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.login-cabecalho h1 {
+  margin: 16px 0 0;
+  max-width: 18rem;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  color: #152232;
+  text-wrap: balance;
+}
+
+.login-cabecalho p {
+  margin: 6px 0 0;
+  font-size: 0.875rem;
+  color: #6d6f78;
+}
+
+.login-form,
+.login-recuperacao {
+  margin-top: 26px;
+}
+
+.login-campo + .login-campo {
+  margin-top: 16px;
+}
+
+.login-campo label,
+.login-rotulo label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #3e4b58;
+}
+
+.login-rotulo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.login-esqueceu {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #2568d9;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.login-esqueceu:hover {
+  text-decoration: underline;
+}
+
+.login-campo input {
+  display: block;
+  width: 100%;
+  height: 38px;
+  margin-top: 6px;
+  padding: 0 12px;
+  border: 1px solid #d2d2dd;
+  border-radius: 6px;
+  background: #fff;
+  color: #152232;
+  font-size: 0.875rem;
+}
+
+.login-campo input::placeholder {
+  color: #a8b0ba;
+}
+
+.login-campo input:focus {
+  outline: 2px solid rgba(35, 61, 137, 0.35);
+  outline-offset: 1px;
+  border-color: #233d89;
+}
+
+.login-campo input[aria-invalid='true'] {
+  border-color: #d92d20;
+}
+
+.login-erro,
+.login-erro-campo {
+  margin: 8px 0 0;
+  color: #b42318;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.login-erro {
+  margin-top: 14px;
+}
+
+.login-botao {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  margin-top: 18px;
+  border: 0;
+  border-radius: 6px;
+  background: #233d89;
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+@media (max-width: 420px) {
+  .login-pagina { padding-top: 48px; }
+  .login-cartao { padding: 32px 20px 28px; }
+  .login-botao { font-size: 0.875rem; }
+}
+
+.login-botao:hover:not(:disabled) {
+  background: #1c3274;
+}
+
+.login-botao:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.login-recuperacao p {
+  margin: 0;
+  color: #3e4b58;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  text-align: center;
+}
