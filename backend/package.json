@@ -12,7 +12,8 @@
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:demo": "tsx prisma/seed-pesquisa-demo.ts",
-    "testar": "tsx scripts/roteiro-testes.ts"
+    "testar": "tsx scripts/roteiro-testes.ts",
+    "test": "node --import tsx --test --test-reporter=spec tests/*.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

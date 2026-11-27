@@ -78,7 +78,8 @@ npm run db:studio    # abre o Prisma Studio (UI do banco)
 npm run db:generate  # regenera o Prisma Client
 npm run db:seed      # dados iniciais (pode rodar várias vezes sem duplicar)
 npm run db:seed:demo # cria uma pesquisa de teste e imprime os links únicos
-npm run testar       # roteiro guiado de testes (com a API rodando); "npm run testar -- 2" roda só a parte 2
+npm run testar       # roteiro guiado de testes (com a API rodando); "npm run testar -- 4" roda só a parte 4
+npm test             # testes unitários do cálculo dos indicadores (não precisa de banco nem API)
 ```
 
 Com Docker, rode o seed dentro do container: `docker compose exec backend npm run db:seed`.
@@ -189,6 +190,107 @@ Body do POST:
 
 Para testar: `npm run db:seed:demo` imprime um link por estabelecimento; use o token no GET/POST.
 
+### Correção de resposta pelo administrador (UC08)
+
+Exige login (`Authorization: Bearer <token>`). O admin corrige **um campo por vez**, mesmo com a pesquisa encerrada; cada alteração vai para o histórico com o admin, a data/hora e o valor anterior.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/respostas/:respostaId` | Resposta com estabelecimento e taxas por período |
+| PATCH | `/api/respostas/:respostaId` | Corrige ou apaga um campo |
+| GET | `/api/respostas/:respostaId/historico` | Alterações da resposta, a mais recente primeiro (estabelecimento e admin) |
+
+Body do PATCH (um dos formatos):
+
+```json
+{ "campo": "taxaOcupacao", "periodoId": "1", "valor": 80 }
+{ "campo": "taxaOcupacao", "periodoId": "1", "valor": null }
+{ "campo": "preferenciaBoletim", "valor": "EMAIL" }
+{ "campo": "emailConfirmacao", "valor": "gerente@hotel.com" }
+```
+
+A resposta traz `alterado` (`false` se o valor já era esse) e `indicadoresRecalculados`: se a pesquisa já tinha indicadores calculados, corrigir uma taxa recalcula na hora. A retificação pelo próprio estabelecimento continua pelo formulário (`POST /api/formulario/:token/resposta`) enquanto a pesquisa estiver aberta.
+
+### Painel de respondentes e reenvio de link (UC06 / UC07)
+
+Exige login. O painel lista respondentes e pendentes de uma pesquisa, com contatos e
+data da resposta. O reenvio mantém o mesmo link único do convite.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/pesquisas/:pesquisaId/respondentes` | Resumo e lista de respondentes/pendentes |
+| POST | `/api/pesquisas/:pesquisaId/respondentes/reenviar` | Reenvia por e-mail ou prepara mensagem para WhatsApp |
+
+Body do reenvio:
+
+```json
+{
+  "conviteIds": ["1", "2"],
+  "canal": "EMAIL",
+  "tokens": {
+    "1": "token-original-do-convite",
+    "2": "outro-token-original"
+  }
+}
+```
+
+No canal `WHATSAPP`, a resposta inclui a mensagem pronta e uma URL `wa.me` com o texto
+preenchido para o administrador enviar. O token original não é persistido pelo sistema.
+Por isso, o reenvio recebe os tokens
+originais gerados na criação da pesquisa e valida cada um contra o hash armazenado
+antes de enviar.
+
+Para e-mail, configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`,
+`SMTP_PASS` e `SMTP_FROM`. Sem SMTP configurado, a API retorna
+`503 SMTP_NAO_CONFIGURADO` em vez de registrar um falso envio.
+
+### Indicadores (UC09)
+
+Exige login. Cada cálculo cria uma nova execução por período; as anteriores ficam guardadas.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/pesquisas/:pesquisaId/indicadores/calcular` | Calcula todos os períodos com os parâmetros ativos |
+| GET | `/api/pesquisas/:pesquisaId/indicadores` | Último cálculo de cada período (`status: null` se ainda não calculou) |
+
+Cada período traz `status` (`CONCLUIDO` ou `FALHOU` quando ninguém respondeu aquele período), `mensagem` (ex.: RevPAR pendente por falta de diária média) e a lista `indicadores` com `{ codigo, dimensao, valor, unidade }`:
+
+| Código | Dimensão | O que é |
+|---|---|---|
+| `TAXA_OCUPACAO_PONDERADA` | TOTAL | Σ(taxa × UH) / Σ UH dos respondentes |
+| `TURISTAS_RESPONDENTES`, `TURISTAS_NAO_RESPONDENTES`, `TURISTAS_MEIOS_REGULARES` | TOTAL | Leitos médios × taxa × diárias |
+| `TURISTAS_RHC` | TOTAL | Leitos médios do RHC × taxa ponderada × diárias |
+| `TURISTAS_DAY_USE`, `TURISTAS_DAY_USE_POR_DIA` | TOTAL | Hospedados por dia / (1 − % day use) − hospedados por dia |
+| `TURISTAS_TOTAL`, `TURISTAS_POR_DIA` | TOTAL | Regulares + RHC + day use |
+| `COBERTURA_ESTABELECIMENTOS`, `COBERTURA_LEITOS` | TOTAL | % de respondentes |
+| `ESTABELECIMENTOS_RESPONDENTES`, `LEITOS_RESPONDENTES` | TOTAL | Base da cobertura |
+| `ESTABELECIMENTOS_POR_FAIXA` | EXCELENTE, OTIMA, BOA, REGULAR, RUIM | Faixas 81–100, 61–80, 41–60, 21–40, 0–20 |
+| `TAXA_OCUPACAO_POR_TIPO` | HOTEL, RESORT, POUSADA, GERAL | Taxa ponderada só daquele tipo (sem respondentes do tipo, usa a geral) |
+| `REVPAR_ARITMETICA`, `REVPAR_PONDERADA` | HOTEL, RESORT, POUSADA, GERAL | Diária média × taxa do tipo |
+| `RECEITA_ESTIMADA_ARITMETICA`, `RECEITA_ESTIMADA_PONDERADA` | HOTEL, RESORT, POUSADA, GERAL | RevPAR × UH do tipo no inventário × diárias |
+
+Diárias do período = dias de início a fim, contando os dois (outubro = 31, 31/10 a 02/11 = 3).
+
+| Status | Código | Quando |
+|---|---|---|
+| 404 | `PESQUISA_NAO_ENCONTRADA` | Pesquisa não existe |
+| 422 | `SEM_RESPOSTAS` | Ninguém respondeu a pesquisa ainda |
+| 422 | `PARAMETROS_AUSENTES` / `RHC_AUSENTE` / `INVENTARIO_INCOMPLETO` | Falta dado de base para o cálculo |
+
+O cálculo fica em `backend/src/modules/indicadores/calculo.ts` (sem banco), conferido por `npm test` contra a planilha de conferência em `backend/tests/planilha-oto.ts`.
+
+### Exportação CSV (UC12)
+
+Exige login e exporta somente indicadores agregados, sem respostas individuais.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/pesquisas/:pesquisaId/indicadores/exportar.csv` | Exporta todos os períodos com indicadores |
+| GET | `/api/pesquisas/:pesquisaId/indicadores/exportar.csv?periodoIds=1,2` | Exporta períodos selecionados |
+
+O arquivo pode reunir indicadores calculados e importados, identificados pela coluna
+`origem`. Sem indicadores para o filtro, a API retorna `422 SEM_INDICADORES`.
+
 ### Frontend
 
 ```bash
@@ -221,11 +323,16 @@ Projeto-de-SI/
 │   │   │   ├── auth/           # login do administrador
 │   │   │   ├── pesquisas/      # criar pesquisa e gerar links únicos
 │   │   │   └── formulario/     # formulário de resposta por link único
+│   │   │   ├── formulario/     # formulário de resposta por link único
+│   │   │   ├── indicadores/    # cálculo dos indicadores (calculo.ts) e rotas
+│   │   │   └── respostas/      # correção pelo admin e histórico
 │   │   └── lib/
 │   │       ├── prisma.ts       # singleton do PrismaClient
 │   │       ├── diasUteis.ts    # regra de dias úteis (ponto único para incluir feriados)
 │   │       ├── prazo.ts        # prazo padrão de 5 dias úteis (horário de Brasília)
 │   │       └── token.ts        # geração e hash dos tokens dos links
+│   ├── tests/                  # testes unitários e planilha de conferência
+│   ├── scripts/                # roteiro guiado de testes (npm run testar)
 │   ├── tsconfig.json
 │   ├── Dockerfile
 │   └── package.json

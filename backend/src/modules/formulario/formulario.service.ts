@@ -3,6 +3,7 @@ import { ErroHttp, CampoInvalido } from '../../errors/ErroHttp'
 import { prisma } from '../../lib/prisma'
 import { calcularHashToken } from '../../lib/token'
 import { DadosResposta } from './formulario.schemas'
+import { Alteracao, CAMPOS, registrarHistorico, textoOuNulo } from '../respostas/historico'
 
 const conviteComDetalhes = Prisma.validator<Prisma.ConvitePesquisaDefaultArgs>()({
   include: {
@@ -19,13 +20,6 @@ const conviteComDetalhes = Prisma.validator<Prisma.ConvitePesquisaDefaultArgs>()
 type ConviteComDetalhes = Prisma.ConvitePesquisaGetPayload<typeof conviteComDetalhes>
 type RespostaComOcupacoes = NonNullable<ConviteComDetalhes['resposta']>
 type Transacao = Prisma.TransactionClient
-
-type RegistroHistorico = {
-  periodoId?: bigint
-  campoAlterado: string
-  valorAnterior: string | null
-  valorNovo: string | null
-}
 
 async function buscarConvite(token: string): Promise<ConviteComDetalhes> {
   const convite = await prisma.convitePesquisa.findUnique({
@@ -139,16 +133,12 @@ async function registrarNovaResposta(tx: Transacao, convite: ConviteComDetalhes,
   })
 }
 
-function textoOuNulo(valor: string | number | null | undefined): string | null {
-  return valor === null || valor === undefined ? null : String(valor)
-}
-
-function compararCamposDaResposta(anterior: RespostaComOcupacoes, dados: DadosResposta): RegistroHistorico[] {
-  const alteracoes: RegistroHistorico[] = []
+function compararCamposDaResposta(anterior: RespostaComOcupacoes, dados: DadosResposta): Alteracao[] {
+  const alteracoes: Alteracao[] = []
 
   if (anterior.preferenciaBoletim !== dados.preferenciaBoletim) {
     alteracoes.push({
-      campoAlterado: 'preferencia_boletim',
+      campoAlterado: CAMPOS.preferenciaBoletim,
       valorAnterior: anterior.preferenciaBoletim,
       valorNovo: dados.preferenciaBoletim,
     })
@@ -156,7 +146,7 @@ function compararCamposDaResposta(anterior: RespostaComOcupacoes, dados: DadosRe
 
   if (anterior.emailConfirmacao !== dados.emailConfirmacao) {
     alteracoes.push({
-      campoAlterado: 'email_confirmacao',
+      campoAlterado: CAMPOS.emailConfirmacao,
       valorAnterior: anterior.emailConfirmacao,
       valorNovo: dados.emailConfirmacao,
     })
@@ -170,7 +160,7 @@ function compararCamposDaResposta(anterior: RespostaComOcupacoes, dados: DadosRe
     if (taxaAnterior !== ocupacao.taxaOcupacao) {
       alteracoes.push({
         periodoId: BigInt(ocupacao.periodoId),
-        campoAlterado: 'taxa_ocupacao',
+        campoAlterado: CAMPOS.taxaOcupacao,
         valorAnterior: textoOuNulo(taxaAnterior),
         valorNovo: textoOuNulo(ocupacao.taxaOcupacao),
       })
@@ -207,13 +197,7 @@ async function retificarResposta(tx: Transacao, convite: ConviteComDetalhes, dad
     },
   })
 
-  await tx.historicoResposta.createMany({
-    data: alteracoes.map((alteracao) => ({
-      ...alteracao,
-      respostaId: anterior.id,
-      tipoAutor: 'ESTABELECIMENTO' as const,
-    })),
-  })
+  await registrarHistorico(tx, anterior.id, alteracoes, { tipo: 'ESTABELECIMENTO' })
 
   return alteracoes.length
 }
