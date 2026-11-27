@@ -4,6 +4,7 @@ import { prisma } from './lib/prisma'
 import { tratarErros } from './middlewares/tratarErros'
 import { authRouter } from './modules/auth/auth.routes'
 import { formularioRouter } from './modules/formulario/formulario.routes'
+import { pesquisasRouter } from './modules/pesquisas/pesquisas.routes'
 import { indicadoresRouter } from './modules/indicadores/indicadores.routes'
 import { respostasRouter } from './modules/respostas/respostas.routes'
 import { respondentesRouter } from './modules/respondentes/respondentes.routes'
@@ -24,6 +25,7 @@ app.get('/health', async (_req: Request, res: Response) => {
 
 app.use('/api/auth', authRouter)
 app.use('/api/formulario', formularioRouter)
+app.use('/api/pesquisas', pesquisasRouter)
 app.use('/api/pesquisas/:pesquisaId/indicadores', indicadoresRouter)
 app.use('/api/respostas', respostasRouter)
 app.use('/api/pesquisas/:pesquisaId/respondentes', respondentesRouter)

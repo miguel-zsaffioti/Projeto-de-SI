@@ -115,6 +115,47 @@ curl -X POST http://localhost:3001/api/auth/login \
   -d '{"email":"admin@oto.local","senha":"Admin@123"}'
 ```
 
+### Pesquisas e links únicos (UC02 / UC03)
+
+Rotas do administrador: exigem `Authorization: Bearer <token>` (sem token válido: `401 NAO_AUTENTICADO`).
+
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/pesquisas` | Cria a pesquisa e gera um link único para cada meio de hospedagem ativo do inventário |
+| GET | `/api/pesquisas` | Lista as pesquisas (mais recentes primeiro) com totais de períodos, convites e respondidos |
+| GET | `/api/pesquisas/prazo-sugerido` | Prazo padrão de 5 dias úteis a partir de agora, para pré-preencher a tela |
+
+Body do `POST /api/pesquisas`:
+
+```json
+{
+  "tipo": "CONSOLIDADA",
+  "periodos": [
+    { "nome": "Outubro/2026", "dataInicio": "2026-10-01", "dataFim": "2026-10-31", "tipoDado": "REALIZADO" },
+    { "nome": "Finados 2026", "dataInicio": "2026-10-31", "dataFim": "2026-11-02", "tipoDado": "REALIZADO" }
+  ],
+  "prazoResposta": "2026-11-27"
+}
+```
+
+- `tipo`: `CONSOLIDADA` ou `EXPECTATIVA`. `tipoDado` de cada período: `REALIZADO` ou `ESPERADO`.
+- Datas no formato `AAAA-MM-DD`; a data de fim pode ser igual à de início, mas não anterior. Não pode repetir o mesmo período na pesquisa.
+- `tipo` e `tipoDado` precisam combinar: `CONSOLIDADA` aceita só períodos `REALIZADO`, e `EXPECTATIVA` só `ESPERADO` (senão, `400` apontando `periodos.N.tipoDado`).
+- `prazoResposta` é opcional: sem ele, vale 5 dias úteis após a abertura (hoje só sábado e domingo são dias não úteis; a regra está isolada em `backend/src/lib/diasUteis.ts`, onde dá para incluir feriados). Aceita `AAAA-MM-DD` (vale até 23:59:59 de Brasília desse dia) ou data e hora ISO, e precisa ser futuro.
+- Períodos que já existem (mesmo nome, datas e tipo de dado) são reaproveitados.
+
+Resposta `201`: `pesquisa` (com `periodos` e `ordemExibicao`), `totalConvites` e `convites[]` com `id`, `status` (`PENDENTE`), `estabelecimento` e `link` (`<BASE_URL>/responder/<token>`).
+
+**Como o link é formado:** o token é um HMAC-SHA256 do par (id da pesquisa, id do estabelecimento) com o segredo `LINK_TOKEN_SECRET` (se não existir, usa o `JWT_SECRET`). O banco guarda só o hash do token (RNF03). Como o token é reproduzível, o reenvio (RN08) refaz o mesmo link com `gerarTokenConviteDeterministico(pesquisaId, estabelecimentoId, env.linkTokenSecret)` e `<BASE_URL>/responder/<token>`, sem gerar link novo. Cada convite é único por pesquisa e estabelecimento.
+
+> **Atenção ao segredo:** trocar `LINK_TOKEN_SECRET` (ou o `JWT_SECRET`, se for ele o usado) invalida os links das pesquisas já criadas. Use um segredo próprio e não o troque durante uma pesquisa aberta.
+
+| Status | Código | Quando |
+|---|---|---|
+| 400 | `DADOS_INVALIDOS` | Tipo ausente/inválido, sem períodos, tipo de dado incompatível com o tipo da pesquisa, data inválida ou fim antes do início, período repetido, prazo inválido ou no passado |
+| 401 | `NAO_AUTENTICADO` | Sem token ou token expirado |
+| 422 | `INVENTARIO_VAZIO` | Não há meio de hospedagem ativo no inventário |
+
 ### Formulário de resposta (UC04 / UC05)
 
 Público, sem login. O `token` é a parte final do link único (`/responder/<token>`).
@@ -280,11 +321,15 @@ Projeto-de-SI/
 │   │   ├── middlewares/        # autenticação do admin e tratamento de erros
 │   │   ├── modules/
 │   │   │   ├── auth/           # login do administrador
+│   │   │   ├── pesquisas/      # criar pesquisa e gerar links únicos
+│   │   │   └── formulario/     # formulário de resposta por link único
 │   │   │   ├── formulario/     # formulário de resposta por link único
 │   │   │   ├── indicadores/    # cálculo dos indicadores (calculo.ts) e rotas
 │   │   │   └── respostas/      # correção pelo admin e histórico
 │   │   └── lib/
 │   │       ├── prisma.ts       # singleton do PrismaClient
+│   │       ├── diasUteis.ts    # regra de dias úteis (ponto único para incluir feriados)
+│   │       ├── prazo.ts        # prazo padrão de 5 dias úteis (horário de Brasília)
 │   │       └── token.ts        # geração e hash dos tokens dos links
 │   ├── tests/                  # testes unitários e planilha de conferência
 │   ├── scripts/                # roteiro guiado de testes (npm run testar)
@@ -319,6 +364,8 @@ Projeto-de-SI/
 | `DATABASE_URL` | `postgresql://oto_user:oto_pass@localhost:5432/oto` | String de conexão (Prisma) |
 | `JWT_SECRET` | — (obrigatória) | Segredo para assinar o token de login |
 | `JWT_EXPIRES_IN` | `8h` | Validade do token de login |
+| `LINK_TOKEN_SECRET` | usa o `JWT_SECRET` | Segredo que gera os links únicos dos convites (use um próprio) |
+| `BASE_URL` | `http://localhost:5173` | Endereço do frontend, usado para montar os links únicos |
 | `ADMIN_EMAIL` / `ADMIN_SENHA` / `ADMIN_NOME` | `admin@oto.local` / `Admin@123` | Admin criado pelo seed |
 
 ### Frontend

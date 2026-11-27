@@ -2,6 +2,8 @@ import 'dotenv/config'
 import readline from 'readline/promises'
 import { PrismaClient } from '@prisma/client'
 import { criarPesquisaDemo } from '../prisma/seed-pesquisa-demo'
+import { calcularPrazoPadrao, fimDoDiaNoBrasil } from '../src/lib/prazo'
+import { calcularHashToken, gerarTokenConviteDeterministico } from '../src/lib/token'
 import { periodosDaPlanilha } from '../tests/planilha-oto'
 
 const API = process.env.API_URL ?? 'http://localhost:3001'
@@ -437,9 +439,229 @@ async function parte3Formulario() {
   )
 }
 
-async function parte4Indicadores() {
+async function parte4Pesquisas() {
   abrirParte(
-    'PARTE 4 · Cálculo dos indicadores (UC09)',
+    'PARTE 4 · Criar pesquisa e gerar links únicos (UC02 e UC03)',
+    'Cria pesquisas pela API como administrador e confere os links gerados e o que fica no banco.',
+  )
+
+  const login = await chamarApi({
+    metodo: 'POST',
+    caminho: '/api/auth/login',
+    corpo: { email: 'admin@oto.local', senha: 'Admin@123' },
+  })
+  const token: string = login.corpo.token
+
+  const sufixo = Date.now()
+  const periodoValido = { nome: `Teste Pesquisas ${sufixo}`, dataInicio: '2026-10-01', dataFim: '2026-10-31', tipoDado: 'REALIZADO' }
+  const em30Dias = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+  await testarApi(
+    '4.1',
+    'Criar pesquisa sem estar logado',
+    { metodo: 'POST', caminho: '/api/pesquisas', corpo: { tipo: 'CONSOLIDADA', periodos: [periodoValido] } },
+    401,
+    'NAO_AUTENTICADO',
+    (corpo) => corpo.codigo === 'NAO_AUTENTICADO',
+  )
+
+  await testarApi(
+    '4.2',
+    'Prazo sugerido pelo sistema (5 dias úteis)',
+    { metodo: 'GET', caminho: '/api/pesquisas/prazo-sugerido', token },
+    200,
+    'uma data futura que cai em dia útil',
+    (corpo) => {
+      const diaDaSemana = new Date(`${corpo.data}T12:00:00Z`).getUTCDay()
+      return corpo.data > new Date().toISOString().slice(0, 10) && diaDaSemana >= 1 && diaDaSemana <= 5
+    },
+  )
+
+  await testarApi(
+    '4.3',
+    'Período com data de fim anterior à de início',
+    {
+      metodo: 'POST',
+      caminho: '/api/pesquisas',
+      token,
+      corpo: { tipo: 'CONSOLIDADA', periodos: [{ ...periodoValido, dataInicio: '2026-10-31', dataFim: '2026-10-01' }] },
+    },
+    400,
+    'DADOS_INVALIDOS apontando periodos.0.dataFim',
+    (corpo) => corpo.codigo === 'DADOS_INVALIDOS' && corpo.campos?.[0]?.campo === 'periodos.0.dataFim',
+  )
+
+  await testarApi(
+    '4.4',
+    'Pesquisa sem nenhum período',
+    { metodo: 'POST', caminho: '/api/pesquisas', token, corpo: { tipo: 'CONSOLIDADA', periodos: [] } },
+    400,
+    'DADOS_INVALIDOS apontando periodos',
+    (corpo) => corpo.campos?.[0]?.campo === 'periodos',
+  )
+
+  await testarApi(
+    '4.5',
+    'Prazo de resposta no passado',
+    {
+      metodo: 'POST',
+      caminho: '/api/pesquisas',
+      token,
+      corpo: { tipo: 'CONSOLIDADA', periodos: [periodoValido], prazoResposta: '2020-01-01' },
+    },
+    400,
+    'DADOS_INVALIDOS apontando prazoResposta',
+    (corpo) => corpo.campos?.[0]?.campo === 'prazoResposta',
+  )
+
+  await testarApi(
+    '4.6',
+    'Mesmo período informado duas vezes',
+    { metodo: 'POST', caminho: '/api/pesquisas', token, corpo: { tipo: 'CONSOLIDADA', periodos: [periodoValido, periodoValido] } },
+    400,
+    'DADOS_INVALIDOS apontando periodos.1',
+    (corpo) => corpo.campos?.[0]?.campo === 'periodos.1',
+  )
+
+  const consolidada = await testarApi(
+    '4.7',
+    'Criar pesquisa Consolidada com 1 período e sem prazo (usa o padrão)',
+    { metodo: 'POST', caminho: '/api/pesquisas', token, corpo: { tipo: 'CONSOLIDADA', periodos: [periodoValido] } },
+    201,
+    'pesquisa ABERTA e 13 convites, cada um com um link diferente',
+    (corpo) =>
+      corpo.pesquisa?.tipo === 'CONSOLIDADA' &&
+      corpo.pesquisa?.status === 'ABERTA' &&
+      corpo.totalConvites === 13 &&
+      new Set(corpo.convites.map((convite: { link: string }) => convite.link)).size === 13,
+  )
+
+  const pesquisaCriada = consolidada.corpo?.pesquisa
+  const primeiroConvite = consolidada.corpo?.convites?.[0]
+  const tokenDoLink: string = primeiroConvite?.link?.split('/responder/')[1] ?? ''
+
+  await testar('4.8', 'Prazo padrão: 5 dias úteis depois da abertura, até o fim do dia', async () => {
+    const esperado = calcularPrazoPadrao(new Date(pesquisaCriada.abertaEm)).prazo.toISOString()
+    const recebido = new Date(pesquisaCriada.prazoResposta).toISOString()
+    return { passou: recebido === esperado, esperado, recebido }
+  })
+
+  await testar('4.9', 'No banco fica só o hash do token (nunca o link) e o convite nasce PENDENTE', async () => {
+    const convite = await prisma.convitePesquisa.findUnique({ where: { tokenHash: calcularHashToken(tokenDoLink) } })
+    const total = await prisma.convitePesquisa.count({ where: { pesquisaId: BigInt(pesquisaCriada.id) } })
+    return {
+      passou: !!convite && convite.status === 'PENDENTE' && convite.tokenHash !== tokenDoLink && total === 13,
+      esperado: '13 convites PENDENTE e tokenHash = sha256(token do link)',
+      recebido: convite ? `${total} convites · primeiro ${convite.status} · hash ${convite.tokenHash.slice(0, 12)}...` : 'convite não encontrado',
+    }
+  })
+
+  await testarApi(
+    '4.10',
+    'O link gerado abre o formulário do estabelecimento certo',
+    { metodo: 'GET', caminho: `/api/formulario/${tokenDoLink}` },
+    200,
+    `nome fantasia "${primeiroConvite?.estabelecimento?.nomeFantasia}" e 1 período`,
+    (corpo) =>
+      corpo.estabelecimento?.nomeFantasia === primeiroConvite.estabelecimento.nomeFantasia && corpo.periodos?.length === 1,
+  )
+
+  const expectativa = await testarApi(
+    '4.11',
+    'Criar pesquisa de Expectativa com 2 períodos e prazo informado',
+    {
+      metodo: 'POST',
+      caminho: '/api/pesquisas',
+      token,
+      corpo: {
+        tipo: 'EXPECTATIVA',
+        prazoResposta: em30Dias,
+        periodos: [
+          { nome: `Finados Teste ${sufixo}`, dataInicio: '2026-10-31', dataFim: '2026-11-02', tipoDado: 'ESPERADO' },
+          { nome: `Natal Teste ${sufixo}`, dataInicio: '2026-12-24', dataFim: '2026-12-26', tipoDado: 'ESPERADO' },
+        ],
+      },
+    },
+    201,
+    'períodos na ordem 1 e 2 e prazo até o fim do dia informado',
+    (corpo) =>
+      corpo.pesquisa.tipo === 'EXPECTATIVA' &&
+      corpo.pesquisa.periodos.map((periodo: { ordemExibicao: number }) => periodo.ordemExibicao).join(',') === '1,2' &&
+      new Date(corpo.pesquisa.prazoResposta).toISOString() === fimDoDiaNoBrasil(em30Dias).toISOString(),
+  )
+
+  await testar('4.12', 'Reaproveita um período que já existe em vez de duplicar', async () => {
+    await chamarApi({ metodo: 'POST', caminho: '/api/pesquisas', token, corpo: { tipo: 'CONSOLIDADA', periodos: [periodoValido] } })
+    const total = await prisma.periodoReferencia.count({ where: { nome: periodoValido.nome } })
+    return {
+      passou: total === 1,
+      esperado: '1 registro de período para duas pesquisas',
+      recebido: `${total} registro(s) com o nome "${periodoValido.nome}"`,
+    }
+  })
+
+  await testarApi(
+    '4.13',
+    'Listar as pesquisas',
+    { metodo: 'GET', caminho: '/api/pesquisas', token },
+    200,
+    'a pesquisa do teste 4.7 com 13 convites, 0 respondidos e prazo não vencido',
+    (corpo) => {
+      const pesquisa = corpo.find((item: { id: string }) => item.id === pesquisaCriada.id)
+      return !!pesquisa && pesquisa.totalConvites === 13 && pesquisa.totalRespondidos === 0 && pesquisa.totalPeriodos === 1 && pesquisa.prazoVencido === false
+    },
+  )
+
+  await testarApi(
+    '4.14',
+    'Pesquisa Consolidada com período de dado ESPERADO',
+    {
+      metodo: 'POST',
+      caminho: '/api/pesquisas',
+      token,
+      corpo: { tipo: 'CONSOLIDADA', periodos: [{ ...periodoValido, tipoDado: 'ESPERADO' }] },
+    },
+    400,
+    'DADOS_INVALIDOS em periodos.0.tipoDado pedindo dado realizado',
+    (corpo) => corpo.campos?.[0]?.campo === 'periodos.0.tipoDado' && corpo.campos[0].mensagem.includes('realizado'),
+  )
+
+  await testarApi(
+    '4.15',
+    'Pesquisa de Expectativa com período de dado REALIZADO',
+    {
+      metodo: 'POST',
+      caminho: '/api/pesquisas',
+      token,
+      corpo: { tipo: 'EXPECTATIVA', periodos: [periodoValido] },
+    },
+    400,
+    'DADOS_INVALIDOS em periodos.0.tipoDado pedindo dado esperado',
+    (corpo) => corpo.campos?.[0]?.campo === 'periodos.0.tipoDado' && corpo.campos[0].mensagem.includes('esperado'),
+  )
+
+  await testar('4.16', 'Link reproduzível: mesmo estabelecimento tem link diferente em outra pesquisa', async () => {
+    const segredo = process.env.LINK_TOKEN_SECRET || process.env.JWT_SECRET || ''
+    const recalculado = gerarTokenConviteDeterministico(
+      BigInt(pesquisaCriada.id),
+      BigInt(primeiroConvite.estabelecimento.id),
+      segredo,
+    )
+    const linkNaOutraPesquisa: string | undefined = expectativa.corpo.convites.find(
+      (convite: { estabelecimento: { id: string } }) => convite.estabelecimento.id === primeiroConvite.estabelecimento.id,
+    )?.link
+
+    return {
+      passou: recalculado === tokenDoLink && !!linkNaOutraPesquisa && !linkNaOutraPesquisa.endsWith(tokenDoLink),
+      esperado: 'token recalculado com o segredo = token do link; na outra pesquisa o link é outro',
+      recebido: `recalculado ${recalculado === tokenDoLink ? 'confere' : 'NÃO confere'} · outra pesquisa ${linkNaOutraPesquisa ? 'tem link diferente' : 'sem convite'}`,
+    }
+  })
+}
+
+async function parte5Indicadores() {
+  abrirParte(
+    'PARTE 5 · Cálculo dos indicadores (UC09)',
     'Responde a pesquisa com as mesmas taxas da planilha de conferência e compara os indicadores calculados pela API.',
   )
 
@@ -470,10 +692,10 @@ async function parte4Indicadores() {
   console.log(cinza('  As taxas são as da planilha de conferência (backend/tests/planilha-oto.ts).'))
   await pausar()
 
-  await testarApi('4.1', 'Consultar indicadores sem login', { metodo: 'GET', caminho }, 401, 'NAO_AUTENTICADO', (corpo) => corpo.codigo === 'NAO_AUTENTICADO')
+  await testarApi('5.1', 'Consultar indicadores sem login', { metodo: 'GET', caminho }, 401, 'NAO_AUTENTICADO', (corpo) => corpo.codigo === 'NAO_AUTENTICADO')
 
   await testarApi(
-    '4.2',
+    '5.2',
     'Consultar antes de calcular',
     { metodo: 'GET', caminho, token: tokenAdmin },
     200,
@@ -482,7 +704,7 @@ async function parte4Indicadores() {
   )
 
   const calculo = await testarApi(
-    '4.3',
+    '5.3',
     'Calcular os indicadores',
     { metodo: 'POST', caminho: `${caminho}/calcular`, token: tokenAdmin },
     201,
@@ -513,10 +735,10 @@ async function parte4Indicadores() {
       }
     })
 
-  await conferir('4.4', calculadoOutubro, outubro)
-  await conferir('4.5', calculadoFeriado, feriado)
+  await conferir('5.4', calculadoOutubro, outubro)
+  await conferir('5.5', calculadoFeriado, feriado)
 
-  await testar('4.6', 'Outubro: cobertura, faixas de ocupação e RevPAR de hotel', async () => {
+  await testar('5.6', 'Outubro: cobertura, faixas de ocupação e RevPAR de hotel', async () => {
     const cobertura = valorDoIndicador(calculadoOutubro, 'COBERTURA_ESTABELECIMENTOS')
     const excelente = valorDoIndicador(calculadoOutubro, 'ESTABELECIMENTOS_POR_FAIXA', 'EXCELENTE')
     const otima = valorDoIndicador(calculadoOutubro, 'ESTABELECIMENTOS_POR_FAIXA', 'OTIMA')
@@ -530,7 +752,7 @@ async function parte4Indicadores() {
 
   const semRespostas = await criarPesquisaDemo()
   await testarApi(
-    '4.7',
+    '5.7',
     'Calcular uma pesquisa que ninguém respondeu',
     { metodo: 'POST', caminho: `/api/pesquisas/${semRespostas.pesquisaId}/indicadores/calcular`, token: tokenAdmin },
     422,
@@ -539,7 +761,7 @@ async function parte4Indicadores() {
   )
 
   await testarApi(
-    '4.8',
+    '5.8',
     'Pesquisa que não existe',
     { metodo: 'POST', caminho: '/api/pesquisas/999999999/indicadores/calcular', token: tokenAdmin },
     404,
@@ -548,9 +770,9 @@ async function parte4Indicadores() {
   )
 }
 
-async function parte5Correcao() {
+async function parte6Correcao() {
   abrirParte(
-    'PARTE 5 · Correção de resposta pelo administrador (UC08)',
+    'PARTE 6 · Correção de resposta pelo administrador (UC08)',
     'Um estabelecimento responde, a pesquisa é encerrada e o admin corrige só o campo errado, com histórico.',
   )
 
@@ -580,10 +802,10 @@ async function parte5Correcao() {
   console.log(cinza(`  Resposta #${resposta.id}`))
   await pausar()
 
-  await testarApi('5.1', 'Ver a resposta sem login', { metodo: 'GET', caminho }, 401, 'NAO_AUTENTICADO', (corpo) => corpo.codigo === 'NAO_AUTENTICADO')
+  await testarApi('6.1', 'Ver a resposta sem login', { metodo: 'GET', caminho }, 401, 'NAO_AUTENTICADO', (corpo) => corpo.codigo === 'NAO_AUTENTICADO')
 
   await testarApi(
-    '5.2',
+    '6.2',
     'Ver a resposta como admin',
     { metodo: 'GET', caminho, token: tokenAdmin },
     200,
@@ -594,7 +816,7 @@ async function parte5Correcao() {
   )
 
   await testarApi(
-    '5.3',
+    '6.3',
     'Corrigir a taxa para 150 (fora de 0 a 100)',
     corrigir({ campo: 'taxaOcupacao', periodoId: periodo1, valor: 150 }),
     400,
@@ -603,7 +825,7 @@ async function parte5Correcao() {
   )
 
   await testarApi(
-    '5.4',
+    '6.4',
     'Corrigir a taxa de um período que não é desta resposta',
     corrigir({ campo: 'taxaOcupacao', periodoId: '999999', valor: 50 }),
     400,
@@ -612,7 +834,7 @@ async function parte5Correcao() {
   )
 
   await testarApi(
-    '5.5',
+    '6.5',
     'Corrigir a taxa do 1º período de 78 para 80, com a pesquisa encerrada',
     corrigir({ campo: 'taxaOcupacao', periodoId: periodo1, valor: 80 }),
     200,
@@ -621,7 +843,7 @@ async function parte5Correcao() {
   )
 
   await testarApi(
-    '5.6',
+    '6.6',
     'Mandar o mesmo valor de novo',
     corrigir({ campo: 'taxaOcupacao', periodoId: periodo1, valor: 80 }),
     200,
@@ -633,7 +855,7 @@ async function parte5Correcao() {
   console.log(cinza('\n  Calculando os indicadores desta pesquisa para ver o recálculo automático...'))
 
   await testarApi(
-    '5.7',
+    '6.7',
     'Corrigir a taxa para 90 depois do cálculo',
     corrigir({ campo: 'taxaOcupacao', periodoId: periodo1, valor: 90 }),
     200,
@@ -642,7 +864,7 @@ async function parte5Correcao() {
   )
 
   await testarApi(
-    '5.8',
+    '6.8',
     'Os indicadores já mostram a taxa corrigida',
     { metodo: 'GET', caminho: `/api/pesquisas/${pesquisaId}/indicadores`, token: tokenAdmin },
     200,
@@ -651,7 +873,7 @@ async function parte5Correcao() {
   )
 
   await testarApi(
-    '5.9',
+    '6.9',
     'Apagar a taxa do 2º período (valor null)',
     corrigir({ campo: 'taxaOcupacao', periodoId: periodo2, valor: null }),
     200,
@@ -660,7 +882,7 @@ async function parte5Correcao() {
   )
 
   await testarApi(
-    '5.10',
+    '6.10',
     'Trocar a preferência do boletim para e-mail',
     corrigir({ campo: 'preferenciaBoletim', valor: 'EMAIL' }),
     200,
@@ -669,7 +891,7 @@ async function parte5Correcao() {
   )
 
   const historico = await testarApi(
-    '5.11',
+    '6.11',
     'Histórico da resposta',
     { metodo: 'GET', caminho: `${caminho}/historico`, token: tokenAdmin },
     200,
@@ -713,8 +935,9 @@ async function main() {
     '1': parte1Banco,
     '2': parte2Login,
     '3': parte3Formulario,
-    '4': parte4Indicadores,
-    '5': parte5Correcao,
+    '4': parte4Pesquisas,
+    '5': parte5Indicadores,
+    '6': parte6Correcao,
   }
 
   await garantirApiNoAr()
@@ -722,7 +945,7 @@ async function main() {
   const selecionadas = parteEscolhida ? [parteEscolhida] : Object.keys(partes)
   for (const numero of selecionadas) {
     if (!partes[numero]) {
-      console.log(vermelho(`Parte "${numero}" não existe. Use 1, 2, 3, 4 ou 5.`))
+      console.log(vermelho(`Parte "${numero}" não existe. Use 1, 2, 3, 4, 5 ou 6.`))
       continue
     }
     await partes[numero]()
