@@ -7,9 +7,9 @@ import './Painel.css'
 const ITENS = [
   { rotulo: 'Auditoria de Registros', href: '/auditoria', linhas: ['Auditoria de', 'Registros'] },
   { rotulo: 'Respostas dos Estabelecimentos', href: '/respostas', linhas: ['Respostas dos', 'Estabelecimentos'] },
-  { rotulo: 'Indicadores', linhas: ['Indicadores'] },
-  { rotulo: 'Nova Pesquisa', linhas: ['Nova', 'Pesquisa'] },
-  { rotulo: 'Parâmetros e Fórmulas', linhas: ['Parâmetros e', 'Fórmulas'] },
+  { rotulo: 'Indicadores', href: '/indicadores', linhas: ['Indicadores'] },
+  { rotulo: 'Nova Pesquisa', href: '/nova-pesquisa', linhas: ['Nova', 'Pesquisa'] },
+  { rotulo: 'Parâmetros e Fórmulas', href: '/parametros-e-formulas', linhas: ['Parâmetros e', 'Fórmulas'] },
 ]
 
 type PainelProps = {

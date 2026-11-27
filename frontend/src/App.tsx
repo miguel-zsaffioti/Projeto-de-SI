@@ -5,6 +5,9 @@ import Auditoria from './pages/Auditoria'
 import Login from './pages/Login'
 import Respostas from './pages/Respostas'
 import { lerSessao } from './lib/sessao'
+import Indicadores from './pages/Indicadores'
+import Pesquisa from './pages/Pesquisa'
+import Parametros from './pages/Parametros'
 
 function RotaPrivada({ children }: { children: ReactNode }) {
   if (!lerSessao()) return <Navigate to="/login" replace />
@@ -31,6 +34,36 @@ export default function App() {
           <RotaPrivada>
             <Painel>
               <Respostas />
+            </Painel>
+          </RotaPrivada>
+        }
+      />
+      <Route
+        path="/indicadores"
+        element={
+          <RotaPrivada>
+            <Painel>
+              <Indicadores />
+            </Painel>
+          </RotaPrivada>
+        }
+      />
+      <Route
+        path="/nova-pesquisa"
+        element={
+          <RotaPrivada>
+            <Painel>
+              <Pesquisa />
+            </Painel>
+          </RotaPrivada>
+        }
+      />
+      <Route
+        path="/parametros-e-formulas"
+        element={
+          <RotaPrivada>
+            <Painel>
+              <Parametros />
             </Painel>
           </RotaPrivada>
         }
